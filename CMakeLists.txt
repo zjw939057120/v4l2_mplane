@@ -16,7 +16,7 @@ link_directories(lib)
 add_executable(v4l2_mplane main.c)
 
 add_executable(yuv_to_h264 yuv_to_h264.c)
-target_link_libraries(yuv_to_h264 x264)
+target_link_libraries(yuv_to_h264 x264.so.164)
 
 add_executable(libyuv_scale libyuv_scale.cpp)
 target_link_libraries(libyuv_scale yuv)
