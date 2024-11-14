@@ -21,5 +21,5 @@ target_link_libraries(yuv_to_h264 -lx264)
 add_executable(libyuv_scale libyuv_scale.c)
 target_link_libraries(libyuv_scale yuv)
 
-add_executable(h264_encode h264_encode.c)
+add_executable(h264_encode h264_encode.c libyuv_scale.c)
 target_link_libraries(h264_encode yuv -lx264)

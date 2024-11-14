@@ -9,7 +9,7 @@ int main(int argc, char **argv) {
     int fps = 30;
 
     // 打开YUV文件
-    FILE *yuv_file = fopen("test_s.yuv", "rb");
+    FILE *yuv_file = fopen("output_s.yuv", "rb");
     if (!yuv_file) {
         printf("无法打开YUV文件！\n");
         return -1;
@@ -53,14 +53,14 @@ int main(int argc, char **argv) {
 
     // 编码过程
     int frame_num = 0;
+    x264_nal_t *nals;
+    int i_nals;
     while (fread(pic_in.img.plane[0], 1, y_size, yuv_file) == y_size &&
            fread(pic_in.img.plane[1], 1, uv_size, yuv_file) == uv_size) {
 
         pic_in.i_pts = frame_num++;
 
         // 编码帧
-        x264_nal_t *nals;
-        int i_nals;
         int frame_size = x264_encoder_encode(encoder, &nals, &i_nals, &pic_in, &pic_out);
 
         if (frame_size > 0) {
@@ -70,9 +70,9 @@ int main(int argc, char **argv) {
     }
 
     // 刷新编码器缓冲区，输出剩余的数据
-//    while (x264_encoder_encode(encoder, &nals, &i_nals, NULL, &pic_out)) {
-//        fwrite(nals[0].p_payload, 1, nals[0].i_payload, h264_file);
-//    }
+    while (x264_encoder_encode(encoder, &nals, &i_nals, NULL, &pic_out)) {
+        fwrite(nals[0].p_payload, 1, nals[0].i_payload, h264_file);
+    }
 
     // 清理和关闭
     x264_picture_clean(&pic_in);

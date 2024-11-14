@@ -1,6 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <libyuv.h>
+#include "libyuv_scale.h"
 
 // 打开YUV文件，读取数据并返回指针
 uint8_t* ReadYUVFile(const char* filename, int width, int height, int* frame_size) {
@@ -107,7 +105,7 @@ void ScaleNV12(const uint8_t* src_nv12, int src_width, int src_height,
     free(dst_i420_v);
 }
 
-int main() {
+int libyuv_scale() {
     const char* input_file = "test.yuv";
     const char* output_file = "test_s.yuv";
 
