@@ -4,19 +4,19 @@
 
 int main(int argc, char **argv) {
     // 参数设置
-    int width = 1280;
-    int height = 720;
+    int width = 640;
+    int height = 480;
     int fps = 30;
 
     // 打开YUV文件
-    FILE *yuv_file = fopen("test.yuv", "rb");
+    FILE *yuv_file = fopen("test_s.yuv", "rb");
     if (!yuv_file) {
         printf("无法打开YUV文件！\n");
         return -1;
     }
 
     // 打开输出H.264文件
-    FILE *h264_file = fopen("output.h264", "wb");
+    FILE *h264_file = fopen("output_s.h264", "wb");
     if (!h264_file) {
         printf("无法打开H.264文件！\n");
         fclose(yuv_file);
