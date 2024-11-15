@@ -42,7 +42,6 @@ extern "C" {
 #endif
 
 #include <stdarg.h>
-#include <stdint-gcc.h>
 
 #include "x264_config.h"
 

@@ -12,16 +12,15 @@ set(CMAKE_C_STANDARD 99)
 include_directories(inc)
 include_directories(inc/libyuv)
 
-link_directories(lib)
-
+link_directories(lib/aarch64)
 
 add_executable(v4l2_mplane main.c)
 
 add_executable(yuv_to_h264 yuv_to_h264.c)
-target_link_libraries(yuv_to_h264 -lx264)
+target_link_libraries(yuv_to_h264 -lx264 -lpthread -lm -ldl)
 
 add_executable(libyuv_scale libyuv_scale.c)
-target_link_libraries(libyuv_scale yuv)
+target_link_libraries(libyuv_scale -lyuv)
 
 add_executable(h264_encode h264_encode.c libyuv_scale.c)
-target_link_libraries(h264_encode yuv -lx264)
+target_link_libraries(h264_encode -lyuv -lx264  -lpthread -lm -ldl)
