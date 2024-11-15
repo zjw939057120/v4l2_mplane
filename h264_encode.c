@@ -1,7 +1,6 @@
 #include "h264_encode.h"
 #include <pthread.h>
 #include "libyuv_scale.h"
-#include <x264.h>
 
 struct plane_start {
     void *start;
@@ -12,52 +11,53 @@ struct buffer {
     struct v4l2_plane *planes_buffer;
 };
 
-int h264_encode(struct encodeParameter *encodeParameter) {
+void h264_encode_init(struct H264EncodeParameter *h264EncodeParameter) {
+    // 初始化x264参数
+    x264_param_default_preset(&h264EncodeParameter->param, "veryfast", "zerolatency");
+    h264EncodeParameter->param.i_width = h264EncodeParameter->width_h264;
+    h264EncodeParameter->param.i_height = h264EncodeParameter->height_h264;
+    h264EncodeParameter->param.i_fps_num = 30;
+    h264EncodeParameter->param.i_fps_den = 1;
+    h264EncodeParameter->param.i_csp = X264_CSP_NV12; // 设置颜色空间为 NV12
+    h264EncodeParameter->param.b_full_recon = 0;      // 不使用完整颜色范围（对应 --input-range tv）
+
+    // 打开x264编码器
+    h264EncodeParameter->encoder = x264_encoder_open(&h264EncodeParameter->param);
+    if (!h264EncodeParameter->encoder) {
+        printf("无法打开x264编码器！\n");
+        return;
+    }
+
+    // 初始化x264输入/输出图像结构
+    x264_picture_alloc(&h264EncodeParameter->pic_in, X264_CSP_NV12, h264EncodeParameter->width_h264,
+                       h264EncodeParameter->height_h264);
+    x264_picture_init(&h264EncodeParameter->pic_out);
+
+    // 每帧的YUV大小
+    h264EncodeParameter->y_size = h264EncodeParameter->width_h264 * h264EncodeParameter->height_h264;
+    h264EncodeParameter->uv_size = h264EncodeParameter->y_size / 2;  // NV12格式的UV平面是交错的，所以UV占用总像素数的一半
+    h264EncodeParameter->frame_num = 0;
+}
+
+int h264_encode(struct EncodeParameter *encodeParameter) {
     // 计算输出帧大小
     encodeParameter->frame_size_scale = encodeParameter->width_scale * encodeParameter->height_scale +
                                         (encodeParameter->width_scale / 2) * (encodeParameter->height_scale / 2) *
                                         2;
     //h264
-    int width_h264, height_h264;
-    width_h264 = encodeParameter->width_scale;
-    height_h264 = encodeParameter->height_scale;
+    struct H264EncodeParameter h264EncodeParameter;
+    h264EncodeParameter.width_h264 = encodeParameter->width;
+    h264EncodeParameter.height_h264 = encodeParameter->height;
+    h264_encode_init(&h264EncodeParameter);
 
-    // 初始化x264参数
-    x264_param_t param;
-    x264_param_default_preset(&param, "veryfast", "zerolatency");
-    param.i_width = width_h264;
-    param.i_height = height_h264;
-    param.i_fps_num = 30;
-    param.i_fps_den = 1;
-    param.i_csp = X264_CSP_NV12; // 设置颜色空间为 NV12
-    param.b_full_recon = 0;      // 不使用完整颜色范围（对应 --input-range tv）
-
-    // 打开x264编码器
-    x264_t *encoder = x264_encoder_open(&param);
-    if (!encoder) {
-        printf("无法打开x264编码器！\n");
-//        fclose(yuv_file);
-//        fclose(h264_file);
-        return -1;
-    }
-
-    // 初始化x264输入/输出图像结构
-    x264_picture_t pic_in, pic_out;
-    x264_picture_alloc(&pic_in, X264_CSP_NV12, width_h264, height_h264);
-    x264_picture_init(&pic_out);
-
-    // 每帧的YUV大小
-    int y_size = width_h264 * height_h264;
-    int uv_size = y_size / 2;  // NV12格式的UV平面是交错的，所以UV占用总像素数的一半
-
-    // 编码过程
-    int frame_num = 0;
-    x264_nal_t *nals;
-    int i_nals;
+    struct H264EncodeParameter h264EncodeParameter_scale;
+    h264EncodeParameter_scale.width_h264 = encodeParameter->width_scale;
+    h264EncodeParameter_scale.height_h264 = encodeParameter->height_scale;
+    h264_encode_init(&h264EncodeParameter_scale);
 
     int fd;
     fd_set fds;
-    FILE *file_fd, *file_fd_scale, *file_fd_h264;
+    FILE *file_fd, *file_fd_scale, *file_fd_h264, *file_fd_h264_scale;
     struct timeval tv;
     int ret = -1, i, j, r;
     int num_planes;
@@ -95,6 +95,13 @@ int h264_encode(struct encodeParameter *encodeParameter) {
     file_fd_h264 = fopen(encodeParameter->output_file_h264, "wb+");
     if (!file_fd_h264) {
         printf("open save_file: %s fail\n", encodeParameter->output_file_h264);
+        goto err1;
+    }
+#endif
+#ifdef OUTPUT_FILE_H264_SCALE
+    file_fd_h264_scale = fopen(encodeParameter->output_file_h264_scale, "wb+");
+    if (!file_fd_h264_scale) {
+        printf("open save_file: %s fail\n", encodeParameter->output_file_h264_scale);
         goto err1;
     }
 #endif
@@ -221,7 +228,7 @@ int h264_encode(struct encodeParameter *encodeParameter) {
         }
         if (0 == r) {
             fprintf(stderr, "select timeout\n");
-            exit(EXIT_FAILURE);
+            goto err2;
         }
 
         memset(&buf, 0, sizeof(buf));
@@ -242,6 +249,17 @@ int h264_encode(struct encodeParameter *encodeParameter) {
             //写入yuv文件
             fwrite(encodeParameter->buffer_start, encodeParameter->buffer_bytesused, 1, file_fd);
 #endif
+
+            int frame_size = yuv_to_h264(encodeParameter->buffer_start, &h264EncodeParameter);
+            if (frame_size > 0) {
+#ifdef OUTPUT_FILE_H264
+                // 将编码后的NAL单元写入文件
+                fwrite(h264EncodeParameter.nals[0].p_payload, 1, frame_size, file_fd_h264);
+#endif
+                h264_send_ch(encodeParameter->chn_id, h264EncodeParameter.nals[0].p_payload, frame_size);
+            }
+
+
             //缩放NV12
             uint8_t *dst_nv12 = (uint8_t *) malloc(encodeParameter->frame_size_scale);
 
@@ -252,17 +270,14 @@ int h264_encode(struct encodeParameter *encodeParameter) {
             //写入缩放文件
             fwrite(dst_nv12, 1, encodeParameter->frame_size_scale, file_fd_scale);
 #endif
-            //yuv转h264
-            memcpy(pic_in.img.plane[0], dst_nv12, y_size);
-            memcpy(pic_in.img.plane[1], dst_nv12 + y_size, uv_size);
-            pic_in.i_pts = frame_num++;
-            // 编码帧
-            int frame_size = x264_encoder_encode(encoder, &nals, &i_nals, &pic_in, &pic_out);
-            if (frame_size > 0) {
+            int frame_size_scale = yuv_to_h264(dst_nv12, &h264EncodeParameter_scale);
+            if (frame_size_scale > 0) {
 #ifdef OUTPUT_FILE_H264
                 // 将编码后的NAL单元写入文件
-                fwrite(nals[0].p_payload, 1, frame_size, file_fd_h264);
+                fwrite(h264EncodeParameter_scale.nals[0].p_payload, 1, frame_size_scale, file_fd_h264_scale);
 #endif
+                h264_send_ch(encodeParameter->chn_id + 1, h264EncodeParameter_scale.nals[0].p_payload,
+                             frame_size_scale);
             }
             free(dst_nv12);
         }
@@ -302,6 +317,15 @@ int h264_encode(struct encodeParameter *encodeParameter) {
 
     free(buffers);
 
+    // 清理和关闭
+    x264_picture_clean(&h264EncodeParameter.pic_in);
+    x264_encoder_close(h264EncodeParameter.encoder);
+
+    x264_picture_clean(&h264EncodeParameter_scale.pic_in);
+    x264_encoder_close(h264EncodeParameter_scale.encoder);
+#ifdef OUTPUT_FILE_H264_SCALE
+    fclose(file_fd_h264_scale);
+#endif
 #ifdef OUTPUT_FILE_H264
     fclose(file_fd_h264);
 #endif
@@ -317,8 +341,24 @@ int h264_encode(struct encodeParameter *encodeParameter) {
     return ret;
 }
 
+int yuv_to_h264(void *buffer, struct H264EncodeParameter *h264EncodeParameter) {
+    //yuv转h264
+    memcpy(h264EncodeParameter->pic_in.img.plane[0], buffer, h264EncodeParameter->y_size);
+    memcpy(h264EncodeParameter->pic_in.img.plane[1], buffer + h264EncodeParameter->y_size,
+           h264EncodeParameter->uv_size);
+    h264EncodeParameter->pic_in.i_pts = h264EncodeParameter->frame_num++;
+    // 编码帧
+    return x264_encoder_encode(h264EncodeParameter->encoder, &h264EncodeParameter->nals,
+                               &h264EncodeParameter->i_nals,
+                               &h264EncodeParameter->pic_in, &h264EncodeParameter->pic_out);
+}
+
+void h264_send_ch(u_int8_t id, void *pVoid, size_t len) {
+
+}
+
 int main(int argc, char **argv) {
-    struct encodeParameter encodeParameter[4];
+    struct EncodeParameter encodeParameter[4];
     uint8_t i = 0;
     encodeParameter[i].pid = i;
     encodeParameter[i].chn_id = i;
@@ -326,7 +366,8 @@ int main(int argc, char **argv) {
     encodeParameter[i].input_file = "/dev/video11";
     encodeParameter[i].output_file = "output.yuv";
     encodeParameter[i].output_file_scale = "output_s.yuv";
-    encodeParameter[i].output_file_h264 = "output_s.h264";
+    encodeParameter[i].output_file_h264 = "output.h264";
+    encodeParameter[i].output_file_h264_scale = "output_s.h264";
     encodeParameter[i].width = 1280;
     encodeParameter[i].height = 720;
     //yuv
