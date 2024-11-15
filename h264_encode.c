@@ -1,4 +1,5 @@
 #include "h264_encode.h"
+#include <pthread.h>
 #include "libyuv_scale.h"
 #include <x264.h>
 
@@ -11,29 +12,15 @@ struct buffer {
     struct v4l2_plane *planes_buffer;
 };
 
-int main(int argc, char **argv) {
-    struct encodeParameter encodeParameters;
-    encodeParameters.index = 0;
-    //v4l2
-    encodeParameters.input_file = "/dev/video11";
-    encodeParameters.output_file = "output.yuv";
-    encodeParameters.width = 1280;
-    encodeParameters.height = 720;
-    encodeParameters.frame_num = 200;
-    //yuv
-    encodeParameters.scale = 1;
-    encodeParameters.width_scale = 640;
-    encodeParameters.height_scale = 480;
+int h264_encode(struct encodeParameter *encodeParameter) {
     // 计算输出帧大小
-    encodeParameters.frame_size_scale = encodeParameters.width_scale * encodeParameters.height_scale +
-                                        (encodeParameters.width_scale / 2) * (encodeParameters.height_scale / 2) *
+    encodeParameter->frame_size_scale = encodeParameter->width_scale * encodeParameter->height_scale +
+                                        (encodeParameter->width_scale / 2) * (encodeParameter->height_scale / 2) *
                                         2;
-    encodeParameters.output_file_scale = "output_s.yuv";
     //h264
     int width_h264, height_h264;
-    width_h264 = encodeParameters.width_scale;
-    height_h264 = encodeParameters.height_scale;
-    encodeParameters.output_file_h264 = "output_s.h264";
+    width_h264 = encodeParameter->width_scale;
+    height_h264 = encodeParameter->height_scale;
 
     // 初始化x264参数
     x264_param_t param;
@@ -83,29 +70,34 @@ int main(int argc, char **argv) {
     struct buffer *buffers;
     enum v4l2_buf_type type;
 
-    fd = open(encodeParameters.input_file, O_RDWR);
+    fd = open(encodeParameter->input_file, O_RDWR);
     if (fd < 0) {
-        printf("open device: %s fail\n", encodeParameters.input_file);
+        printf("open device: %s fail\n", encodeParameter->input_file);
         goto err;
     }
 
-    file_fd = fopen(encodeParameters.output_file, "wb+");
+#ifdef OUTPUT_FILE
+    file_fd = fopen(encodeParameter->output_file, "wb+");
     if (!file_fd) {
-        printf("open save_file: %s fail\n", encodeParameters.output_file);
+        printf("open save_file: %s fail\n", encodeParameter->output_file);
         goto err1;
     }
+#endif
 
-    file_fd_scale = fopen(encodeParameters.output_file_scale, "wb+");
+#ifdef OUTPUT_FILE_SCALE
+    file_fd_scale = fopen(encodeParameter->output_file_scale, "wb+");
     if (!file_fd_scale) {
-        printf("open save_file: %s fail\n", encodeParameters.output_file_scale);
+        printf("open save_file: %s fail\n", encodeParameter->output_file_scale);
         goto err1;
     }
-    file_fd_h264 = fopen(encodeParameters.output_file_h264, "wb+");
+#endif
+#ifdef OUTPUT_FILE_H264
+    file_fd_h264 = fopen(encodeParameter->output_file_h264, "wb+");
     if (!file_fd_h264) {
-        printf("open save_file: %s fail\n", encodeParameters.output_file_h264);
+        printf("open save_file: %s fail\n", encodeParameter->output_file_h264);
         goto err1;
     }
-
+#endif
     if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
         printf("Get video capability error!\n");
         goto err1;
@@ -120,8 +112,8 @@ int main(int argc, char **argv) {
 
     memset(&fmt, 0, sizeof(struct v4l2_format));
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    fmt.fmt.pix_mp.width = encodeParameters.width;
-    fmt.fmt.pix_mp.height = encodeParameters.height;
+    fmt.fmt.pix_mp.width = encodeParameter->width;
+    fmt.fmt.pix_mp.height = encodeParameter->height;
     fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
     fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
 
@@ -243,21 +235,23 @@ int main(int argc, char **argv) {
         for (j = 0; j < num_planes; j++) {
             printf("plane[%d] start = %p, bytesused = %d\n", j, ((buffers + buf.index)->plane_start + j)->start,
                    (tmp_plane + j)->bytesused);
-            encodeParameters.buffer_start = ((buffers + buf.index)->plane_start + j)->start;
-            encodeParameters.buffer_bytesused = (tmp_plane + j)->bytesused;
+            encodeParameter->buffer_start = ((buffers + buf.index)->plane_start + j)->start;
+            encodeParameter->buffer_bytesused = (tmp_plane + j)->bytesused;
 
+#ifdef OUTPUT_FILE
             //写入yuv文件
-            fwrite(encodeParameters.buffer_start, encodeParameters.buffer_bytesused, 1, file_fd);
-
+            fwrite(encodeParameter->buffer_start, encodeParameter->buffer_bytesused, 1, file_fd);
+#endif
             //缩放NV12
-            uint8_t *dst_nv12 = (uint8_t *) malloc(encodeParameters.frame_size_scale);
+            uint8_t *dst_nv12 = (uint8_t *) malloc(encodeParameter->frame_size_scale);
 
-            ScaleNV12(encodeParameters.buffer_start, encodeParameters.width, encodeParameters.height,
-                      dst_nv12, encodeParameters.width_scale, encodeParameters.height_scale);
+            ScaleNV12(encodeParameter->buffer_start, encodeParameter->width, encodeParameter->height,
+                      dst_nv12, encodeParameter->width_scale, encodeParameter->height_scale);
 
+#ifdef OUTPUT_FILE_SCALE
             //写入缩放文件
-            fwrite(dst_nv12, 1, encodeParameters.frame_size_scale, file_fd_scale);
-
+            fwrite(dst_nv12, 1, encodeParameter->frame_size_scale, file_fd_scale);
+#endif
             //yuv转h264
             memcpy(pic_in.img.plane[0], dst_nv12, y_size);
             memcpy(pic_in.img.plane[1], dst_nv12 + y_size, uv_size);
@@ -265,15 +259,19 @@ int main(int argc, char **argv) {
             // 编码帧
             int frame_size = x264_encoder_encode(encoder, &nals, &i_nals, &pic_in, &pic_out);
             if (frame_size > 0) {
+#ifdef OUTPUT_FILE_H264
                 // 将编码后的NAL单元写入文件
                 fwrite(nals[0].p_payload, 1, frame_size, file_fd_h264);
+#endif
             }
             free(dst_nv12);
         }
 
+#ifdef OUTPUT_FRAME_NUM
         num++;
-        if (num >= encodeParameters.frame_num)
+        if (num >= OUTPUT_FRAME_NUM)
             break;
+#endif
 
         if (ioctl(fd, VIDIOC_QBUF, &buf) < 0)
             printf("failture VIDIOC_QBUF\n");
@@ -304,11 +302,40 @@ int main(int argc, char **argv) {
 
     free(buffers);
 
+#ifdef OUTPUT_FILE_H264
     fclose(file_fd_h264);
+#endif
+#ifdef OUTPUT_FILE_SCALE
     fclose(file_fd_scale);
+#endif
+#ifdef OUTPUT_FILE
     fclose(file_fd);
+#endif
     err1:
     close(fd);
     err:
     return ret;
+}
+
+int main(int argc, char **argv) {
+    struct encodeParameter encodeParameter[4];
+    uint8_t i = 0;
+    encodeParameter[i].pid = i;
+    encodeParameter[i].chn_id = i;
+    //v4l2
+    encodeParameter[i].input_file = "/dev/video11";
+    encodeParameter[i].output_file = "output.yuv";
+    encodeParameter[i].output_file_scale = "output_s.yuv";
+    encodeParameter[i].output_file_h264 = "output_s.h264";
+    encodeParameter[i].width = 1280;
+    encodeParameter[i].height = 720;
+    //yuv
+    encodeParameter[i].scale = 1;
+    encodeParameter[i].width_scale = 640;
+    encodeParameter[i].height_scale = 480;
+    pthread_create(&encodeParameter[i].pid, NULL, h264_encode, &encodeParameter[i]);
+
+    while (1) {
+        usleep(10 * 1000);
+    }
 }

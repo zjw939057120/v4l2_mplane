@@ -20,13 +20,13 @@
 #include <stdbool.h>
 
 struct encodeParameter {
-    u_int8_t index;
+    pthread_t pid;
+    u_int8_t chn_id;
     //v4l2
     char *input_file;
     char *output_file;
     u_int32_t width;
     u_int32_t height;
-    u_int32_t frame_num;
     void *buffer_start;
     int buffer_bytesused;
     //libyuv
@@ -38,5 +38,10 @@ struct encodeParameter {
     //xh264
     char *output_file_h264;
 };
+
+#define OUTPUT_FRAME_NUM 100
+#define OUTPUT_FILE
+#define OUTPUT_FILE_SCALE
+#define OUTPUT_FILE_H264
 
 #endif //V4L2_H264_ENCODE_H
