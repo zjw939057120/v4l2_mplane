@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <stdlib.h>
+#include <sys/mman.h>
 #include <x264.h>
 
 int main(int argc, char **argv) {

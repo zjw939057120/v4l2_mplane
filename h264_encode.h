@@ -20,6 +20,7 @@
 #include <stdbool.h>
 
 struct encodeParameter {
+    u_int8_t index;
     //v4l2
     char *input_file;
     char *output_file;

@@ -13,12 +13,13 @@ struct buffer {
 
 int main(int argc, char **argv) {
     struct encodeParameter encodeParameters;
+    encodeParameters.index = 0;
     //v4l2
     encodeParameters.input_file = "/dev/video11";
     encodeParameters.output_file = "output.yuv";
     encodeParameters.width = 1280;
     encodeParameters.height = 720;
-    encodeParameters.frame_num = 2000;
+    encodeParameters.frame_num = 200;
     //yuv
     encodeParameters.scale = 1;
     encodeParameters.width_scale = 640;
@@ -29,16 +30,10 @@ int main(int argc, char **argv) {
                                         2;
     encodeParameters.output_file_scale = "output_s.yuv";
     //h264
-    u_int32_t width_h264, height_h264;
-    if (encodeParameters.scale) {
-        width_h264 = encodeParameters.width_scale;
-        height_h264 = encodeParameters.height_scale;
-        encodeParameters.output_file_h264 = "output_s.h264";
-    } else {
-        width_h264 = encodeParameters.width;
-        height_h264 = encodeParameters.height;
-        encodeParameters.output_file_h264 = "output.h264";
-    }
+    int width_h264, height_h264;
+    width_h264 = encodeParameters.width_scale;
+    height_h264 = encodeParameters.height_scale;
+    encodeParameters.output_file_h264 = "output_s.h264";
 
     // 初始化x264参数
     x264_param_t param;

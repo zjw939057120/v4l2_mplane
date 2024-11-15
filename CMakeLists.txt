@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.18)
 project(v4l2_mplane)
+#libyuv 2023.12.12
+#x264 2024.10.21
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_C_STANDARD 99)
 
 #set(CMAKE_C_COMPILER "/mnt/sdd1/code/gnu/android-ndk-r22b/android-toolchain_64/bin/aarch64-linux-android-gcc")
